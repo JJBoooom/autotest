@@ -14,6 +14,7 @@ import (
 var (
 	globalClient   *DockerClient
 	globalRegistry = "192.168.15.86:5000" //在服务器启动后,询问上级服务器获取registry的地址
+
 )
 
 type DockerClient struct {
@@ -106,7 +107,7 @@ func PullImage(http.ResponseWriter, *http.Request) error {
 			fmt.Printf("Tags:%v\n", v.RepoTags)
 			fmt.Printf("Created:%v\n", v.Created)
 			fmt.Printf("Lables:%v\n", v.Labels)
-			fmt.Println("------------------------")
+			fmt.Println("-----------------------")
 		}
 	*/
 	return nil
@@ -147,7 +148,7 @@ func removeImage(image string, tag string) error {
 	if err != nil {
 		return err
 	}
-
+	//需要测试是否通过imageTag的ID能够删除指定的tag
 	err = globalClient.RemoveImage(imageInfo.ID)
 	return err
 }
@@ -178,14 +179,14 @@ func configRegistry(Registry string) error {
 		panic("can't get version")
 	}
 
-	match, err := regexp.Match("1.8.*", []byte(version))
+	match, err := regexp.Match("1\\.8.*", []byte(version))
 	if err != nil {
 		return err
 	}
 	if match {
 		docker_conf := "/etc/sysconfig/docker"
 		//grep失败,则添加
-
+		//这个正则替换得不到预期的效果
 		cmd := fmt.Sprintf("grep -e \"^\\s*INSECURE_REGISTRY.*--insecure-registry\\s*%s %s", globalRegistry, docker_conf)
 		fmt.Println(cmd)
 		err := exec.Command("bash", "-c", cmd).Run()
@@ -203,7 +204,8 @@ func configRegistry(Registry string) error {
 		}
 	} else {
 		docker_conf := "/usr/lib/systemd/system/docker.service"
-		match, err := regexp.Match("1.10.*", []byte(version))
+		//1.10.*或1.9.*版本的配置文件
+		match, err := regexp.Match("1\\.([10 | 9]).*", []byte(version))
 		if err != nil {
 			return err
 		}
@@ -235,6 +237,20 @@ func configRegistry(Registry string) error {
 }
 
 func init() {
+	/*
+		log.SetLevel(log.DebugLevel)
+
+		var logicServer string
+		flag.StringVar(&logicServer, "lserver", "", "<ip>:<port> of logic server")
+		flag.StringVar(&registryServer, "rserver", "", "<ip>:<port> of registry server")
+
+		if len(logicServer) == 0 {
+			log.Fatal("must set logic server ip:port")
+		}
+		if len(registryServer) == 0 {
+			log.Fatal("must set registry server ip:port")
+		}
+	*/
 
 	endpoint := "unix://var/run/docker.sock"
 	client, err := docker.NewClient(endpoint)
