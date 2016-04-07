@@ -63,8 +63,28 @@ var routes = Routes{
 
 	Route{
 		Name:    "Images",
-		Pattern: "/get",
+		Pattern: "/pull/{image:[-a-zA-Z0-9.:]*(/[-a-zA-Z0-9.:]*)*}/{tag:[-a-zA-Z0-9.]*}",
 		Method:  "GET",
 		Handler: handler.JsonReturnHandler(handler.PullImage),
+	},
+
+	Route{
+		Name:    "Images",
+		Pattern: "/push/{image:[-a-zA-Z0-9.:]*(/[-a-zA-Z0-9.:]*)*}/{tag:[-a-zA-Z0-9.]*}",
+		Method:  "GET",
+		Handler: handler.JsonReturnHandler(handler.PushImage),
+	},
+
+	Route{
+		Name:    "Images",
+		Pattern: "/download/{image:[-a-zA-Z0-9.:]*(/[-a-zA-Z0-9.:]*)?}/{tag:[-a-zA-Z0-9.]*}",
+		Method:  "GET",
+		Handler: handler.JsonReturnHandler(handler.PublicPullImage),
+	},
+	Route{
+		Name:    "Images",
+		Pattern: "/tag",
+		Method:  "POST",
+		Handler: handler.JsonReturnHandler(handler.TagImage),
 	},
 }
