@@ -2,15 +2,18 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"net/http"
 	"test/routers"
 	"time"
+
+	"github.com/vmware/harbor/log"
 )
 
 var (
-	ServerIP   = "192.168.12.22"
-	ServerPort = "12345"
-	ListenPort = "9257"
+	ServerIP   string
+	ServerPort string
+	ListenPort string
 )
 
 func register(ip string, port string) error {
@@ -43,6 +46,19 @@ func main() {
 		}
 	}()
 	router := routers.NewRouter()
+	log.Info("listening on " + ListenPort)
 	http.ListenAndServe(":"+ListenPort, router)
 
+}
+
+func init() {
+	flag.StringVar(&ServerIP, "sip", "", "server ip")
+	flag.StringVar(&ServerPort, "sport", "", "server port")
+	flag.StringVar(&ListenPort, "lport", "", "listen port")
+
+	flag.Parse()
+
+	if len(ServerIP) == 0 || len(ServerPort) == 0 || len(ListenPort) == 0 {
+		panic("invalid argument")
+	}
 }

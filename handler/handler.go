@@ -7,10 +7,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os/exec"
+	"reflect"
 	"regexp"
 	"strings"
 	"test/errjson"
 
+	"github.com/Sirupsen/logrus"
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/gorilla/mux"
 )
@@ -18,7 +20,7 @@ import (
 var (
 	globalClient   *DockerClient
 	globalRegistry = "192.168.15.83:5000" //在服务器启动后,询问上级服务器获取registry的地址
-
+	log            = logrus.New()
 )
 
 type DockerClient struct {
@@ -113,6 +115,7 @@ func PublicPullImage(w http.ResponseWriter, r *http.Request) error {
 
 	exists, err := IsImageExist(image, tag)
 	if err != nil {
+		log.Errorf("pushFromPublic check image[%s:%s] exists fail:%v\n", image, tag, err)
 		return errjson.NewInternalServerError(err.Error())
 	}
 
@@ -120,10 +123,16 @@ func PublicPullImage(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	opts := docker.PullImageOptions{
-		Tag: tag,
+		Repository: image,
+		Tag:        tag,
+		Registry:   "docker.io",
 	}
 	auths := docker.AuthConfiguration{}
-	globalClient.PullImage(opts, auths)
+	err = globalClient.PullImage(opts, auths)
+	if err != nil {
+		log.Errorf("pushFromPublic: pull image[%s:%s] fail:%v\n", image, tag, err)
+		return err
+	}
 
 	return nil
 }
@@ -164,17 +173,17 @@ func TagImage(w http.ResponseWriter, r *http.Request) error {
 		image2 = image2 + ":" + slice2[i]
 	}
 
-	fmt.Printf("TagImage : image:%v, tag:%v\n", image2, tag2)
+	log.Debugf("TagImage : image:%v, tag:%v\n", image2, tag2)
 
 	exists, err := IsImageExist(image1, tag1)
 	if err != nil {
-		fmt.Printf("%s:%s get Image check ", image1, tag1)
+		log.Errorf("[%s:%s] get Image exist check fail:%v \n", image1, tag1, err)
 		return errjson.NewInternalServerError(err.Error())
 	}
 
 	if !exists {
 		Msg := fmt.Sprintf("image[%s] doesn't exists\n", old)
-		fmt.Println(Msg)
+		log.Errorf(Msg)
 		return errors.New(Msg)
 	}
 
@@ -186,7 +195,8 @@ func TagImage(w http.ResponseWriter, r *http.Request) error {
 	}
 	err = globalClient.TagImage(old, opts)
 	if err != nil {
-		fmt.Printf("Tag [%v==>%v:%v fail]:%v", old, image2, tag2, err)
+		t := reflect.TypeOf(err)
+		log.Errorf("Tag [%v==>%v:%v ] ErrType[%v:%v] fail:%v\n", old, image2, tag2, t.Name(), t.String(), err)
 	}
 	return err
 }
@@ -202,18 +212,25 @@ func PullImage(w http.ResponseWriter, r *http.Request) error {
 
 	exists, err := IsImageExist(image, tag)
 	if err != nil {
+		log.Errorf("PullImage check image [%s:%s] exists fail:%v\n", image, tag, err)
 		return errjson.NewInternalServerError(err.Error())
 	}
 
 	if exists {
+		log.Infof("PullImage:  image [%s:%s] exists, skip..", image, tag)
 		return nil
 	}
 	opts := docker.PullImageOptions{
-		Tag:      tag,
-		Registry: globalRegistry,
+		Repository: image,
+		Tag:        tag,
+		Registry:   globalRegistry,
 	}
 	auths := docker.AuthConfiguration{}
 	err = globalClient.PullImage(opts, auths)
+	if err != nil {
+		t := reflect.TypeOf(err)
+		log.Errorf("PullImage:[%s:%s] ErrType:[%s:%s] fail:%v\n", image, tag, t.Name(), t.String(), err)
+	}
 	return err
 }
 
@@ -225,16 +242,17 @@ func PushImage(w http.ResponseWriter, r *http.Request) error {
 	if len(image) == 0 || len(tag) == 0 {
 		return errors.New("invalid argument")
 	}
-	fmt.Println(image + ":" + tag)
+	log.Debugf("pushImage:[%s:%s]\n", image, tag)
 
 	exists, err := IsImageExist(image, tag)
 	if err != nil {
+		log.Errorf("pushImage:check[%s:%s] exists fail:%v", image, tag, err)
 		return err
 	}
 
 	if !exists {
 		Msg := fmt.Sprintf("%v:%v doesn't exist", image, tag)
-		fmt.Printf(Msg)
+		log.Errorf(Msg)
 		//Forbidden 错误
 		return errjson.NewErrForbidden(Msg)
 	}
@@ -247,7 +265,8 @@ func PushImage(w http.ResponseWriter, r *http.Request) error {
 	auth := docker.AuthConfiguration{}
 	err = globalClient.PushImage(opts, auth)
 	if err != nil {
-		fmt.Println(err)
+		t := reflect.TypeOf(err)
+		log.Errorf("pushImage:[%s:%s] ErrType:[%v:%v] fail:%v\n", image, tag, t.Name(), t.String(), err)
 		return errjson.NewInternalServerError(err.Error())
 	}
 
@@ -277,17 +296,19 @@ func RemoveImage(http.ResponseWriter, *http.Request) error {
 func ConfigRegistry(Registry string) error {
 
 	if len(Registry) == 0 {
+		log.Errorf("doesn't set registry")
 		return errors.New("registry is empty ")
 	}
 
 	envs, err := globalClient.Version()
 	if err != nil {
+		log.Errorf("get docker version fail:%v", err)
 		return err
 	}
 
 	version := envs.Get("Version")
 	if len(version) == 0 {
-		panic("can't get version")
+		log.Errorf("can't get version")
 	}
 
 	match, err := regexp.Match("1\\.8.*", []byte(version))
@@ -324,12 +345,12 @@ func ConfigRegistry(Registry string) error {
 
 		if match {
 			command := fmt.Sprintf("grep -e \"^ExecStart=.*--insecure-registry %s\" %s ", globalRegistry, docker_conf)
-			fmt.Println(command)
+			log.Debug(command)
 			err := exec.Command("bash", "-c", command).Run()
 
 			if _, ok := err.(*exec.ExitError); ok {
 				command = fmt.Sprintf("sed -i \"s#^ExecStart=.*#^& --insecure-registry %s\" %s", globalRegistry, docker_conf)
-				fmt.Println(command)
+				log.Debug(command)
 				err := exec.Command("bash", "-c", command).Run()
 
 				if err != nil {
@@ -341,19 +362,20 @@ func ConfigRegistry(Registry string) error {
 		}
 	}
 
-	fmt.Println("ready to restart docker ..")
+	log.Info("ready to restart docker ..")
 	command := fmt.Sprintln("systemctl restart docker")
 	err = exec.Command("bash", "-c", command).Run()
 	if err == nil {
-		fmt.Println("restart done..")
+		log.Info("restart done..")
 	}
 
 	return err
 }
 
 func init() {
+
+	log.Level = logrus.DebugLevel
 	/*
-		log.SetLevel(log.DebugLevel)
 
 		var logicServer string
 		flag.StringVar(&logicServer, "lserver", "", "<ip>:<port> of logic server")
