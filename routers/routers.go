@@ -77,7 +77,7 @@ var routes = Routes{
 
 	Route{
 		Name:    "Images",
-		Pattern: "/download/{image:[-a-zA-Z0-9.:]*(/[-a-zA-Z0-9.:]*)?}/{tag:[-a-zA-Z0-9.]*}",
+		Pattern: "/download/{image:[-a-zA-Z0-9.:]*(/[-a-zA-Z0-9.:]*)*}/{tag:[-a-zA-Z0-9.]*}",
 		Method:  "GET",
 		Handler: handler.JsonReturnHandler(handler.PublicPullImage),
 	},
