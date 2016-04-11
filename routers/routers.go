@@ -77,6 +77,13 @@ var routes = Routes{
 
 	Route{
 		Name:    "Images",
+		Pattern: "/exists/{image:[-a-zA-Z0-9.:]*(/[-a-zA-Z0-9.:]*)*}/{tag:[-a-zA-Z0-9.]*}",
+		Method:  "GET",
+		Handler: handler.JsonReturnHandler(handler.CheckExists),
+	},
+
+	Route{
+		Name:    "Images",
 		Pattern: "/download/{image:[-a-zA-Z0-9.:]*(/[-a-zA-Z0-9.:]*)*}/{tag:[-a-zA-Z0-9.]*}",
 		Method:  "GET",
 		Handler: handler.JsonReturnHandler(handler.PublicPullImage),
@@ -86,5 +93,11 @@ var routes = Routes{
 		Pattern: "/tag",
 		Method:  "POST",
 		Handler: handler.JsonReturnHandler(handler.TagImage),
+	},
+	Route{
+		Name:    "host",
+		Pattern: "/shutdown",
+		Method:  "GET",
+		Handler: http.HandlerFunc(handler.Shutdown),
 	},
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 	"test/errjson"
@@ -17,7 +18,7 @@ import (
 
 var (
 	globalClient *DockerClient
-	//globalRegistry = "192.168.15.83:5000" //在服务器启动后,询问上级服务器获取registry的地址
+	//在服务器启动后,询问上级服务器获取registry的地址
 	globalRegistry string
 	log            = logrus.New()
 )
@@ -49,7 +50,6 @@ func IsImageExist(image string, tag string) (bool, error) {
 			return false, err
 		}
 	}
-
 	return true, nil
 }
 
@@ -104,7 +104,6 @@ func ListImages(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	fmt.Fprintf(w, string(byteContent))
-
 	return nil
 }
 
@@ -142,7 +141,6 @@ func PublicPullImage(w http.ResponseWriter, r *http.Request) error {
 		log.Errorf("pushFromPublic: pull image[%s:%s] fail:%v\n", image, tag, err)
 		return err
 	}
-
 	return nil
 }
 
@@ -157,10 +155,8 @@ func TagImage(w http.ResponseWriter, r *http.Request) error {
 	byteContent, err := ioutil.ReadAll(r.Body)
 	defer r.Body.Close()
 	if err != nil {
-
 		return err
 	}
-	fmt.Println("tagImage: bytecontent:" + string(byteContent))
 
 	json.Unmarshal(byteContent, &tagOpt)
 	old := tagOpt.Old
@@ -174,7 +170,6 @@ func TagImage(w http.ResponseWriter, r *http.Request) error {
 		image1 = image1 + ":" + slice1[i]
 	}
 
-	// 192.168.15.119:5000/registry:2.1
 	slice2 := strings.Split(new, ":")
 	tag2 := slice2[len(slice2)-1]
 	image2 := slice2[0]
@@ -196,7 +191,6 @@ func TagImage(w http.ResponseWriter, r *http.Request) error {
 		return errors.New(Msg)
 	}
 
-	//这里需要确认这个命令需要传递什么样的参数
 	opts := docker.TagImageOptions{
 		Tag:   tag2,
 		Repo:  image2,
@@ -210,6 +204,28 @@ func TagImage(w http.ResponseWriter, r *http.Request) error {
 	return err
 }
 
+func CheckExists(w http.ResponseWriter, r *http.Request) error {
+	vars := mux.Vars(r)
+	image := vars["image"]
+	tag := vars["tag"]
+
+	if len(image) == 0 || len(tag) == 0 {
+		return errors.New("invalid argument")
+	}
+	exists, err := IsImageExist(image, tag)
+	if err != nil {
+		log.Errorf("PullImage check image [%s:%s] exists fail:%v\n", image, tag, err)
+		return errjson.NewInternalServerError(err.Error())
+	}
+
+	if exists {
+		fmt.Fprintf(w, "exists")
+	} else {
+		fmt.Fprintf(w, "not exists")
+	}
+	return nil
+}
+
 func PullImage(w http.ResponseWriter, r *http.Request) error {
 	vars := mux.Vars(r)
 	image := vars["image"]
@@ -218,24 +234,25 @@ func PullImage(w http.ResponseWriter, r *http.Request) error {
 	if len(image) == 0 || len(tag) == 0 {
 		return errors.New("invalid argument")
 	}
+	/*
+		exists, err := IsImageExist(image, tag)
+		if err != nil {
+			log.Errorf("PullImage check image [%s:%s] exists fail:%v\n", image, tag, err)
+			return errjson.NewInternalServerError(err.Error())
+		}
 
-	exists, err := IsImageExist(image, tag)
-	if err != nil {
-		log.Errorf("PullImage check image [%s:%s] exists fail:%v\n", image, tag, err)
-		return errjson.NewInternalServerError(err.Error())
-	}
-
-	if exists {
-		log.Infof("PullImage:  image [%s:%s] exists, skip..", image, tag)
-		return nil
-	}
+		if exists {
+			log.Infof("PullImage:  image [%s:%s] exists, skip..", image, tag)
+			return nil
+		}
+	*/
 	opts := docker.PullImageOptions{
 		Repository: image,
 		Tag:        tag,
 		Registry:   globalRegistry,
 	}
 	auths := docker.AuthConfiguration{}
-	err = globalClient.PullImage(opts, auths)
+	err := globalClient.PullImage(opts, auths)
 	if err != nil {
 		t := reflect.TypeOf(err)
 		log.Errorf("PullImage:[%s:%s] ErrType:[%s:%s] fail:%v\n", image, tag, t.Name(), t.String(), err)
@@ -262,7 +279,6 @@ func PushImage(w http.ResponseWriter, r *http.Request) error {
 	if !exists {
 		Msg := fmt.Sprintf("%v:%v doesn't exist", image, tag)
 		log.Errorf(Msg)
-		//Forbidden 错误
 		return errjson.NewErrForbidden(Msg)
 	}
 
@@ -301,9 +317,14 @@ func RemoveImage(http.ResponseWriter, *http.Request) error {
 
 //这里需要设置私有仓库地址,重启docker daemon, 在agent启动时,就要配置好
 
+func Shutdown(http.ResponseWriter, *http.Request) {
+	log.Info("recieve server's shutdown command")
+	os.Exit(0)
+}
+
 func init() {
 
-	//	log.Level = logrus.DebugLevel
+	//log.Level = logrus.DebugLevel
 
 	endpoint := "unix://var/run/docker.sock"
 	client, err := docker.NewClient(endpoint)
@@ -311,12 +332,5 @@ func init() {
 		panic(err)
 	}
 	globalClient = &DockerClient{client, 0}
-	/*
-		fmt.Println("config registry ...")
-		err = ConfigRegistry(globalRegistry)
-		if err != nil {
-			panic(err)
-		}
-	*/
 
 }

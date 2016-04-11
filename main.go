@@ -159,10 +159,12 @@ func ConfigRegistry(Registry string) error {
 
 func main() {
 	go func() {
-		err := ConfigRegistry(RegistryIp + ":" + RegistryPort)
-		if err != nil {
-			panic("fail to config registry:" + err.Error())
-		}
+		/*
+			err := ConfigRegistry(RegistryIp + ":" + RegistryPort)
+			if err != nil {
+				panic("fail to config registry:" + err.Error())
+			}
+		*/
 
 		//注册时,从上层服务器获取到registry(IP:Port)
 		registryHost, err := register(ServerIP, ServerPort)
@@ -172,12 +174,15 @@ func main() {
 		if registryHost != (RegistryIp + ":" + RegistryPort) {
 			panic("registry doesn't match server's registry")
 		}
-
 	}()
 	log.Info("router..")
 	router := routers.NewRouter()
 	log.Info("listening on " + ListenPort)
-	http.ListenAndServe(":"+ListenPort, router)
+	err := http.ListenAndServe(":"+ListenPort, router)
+	if err != nil {
+
+		panic(err)
+	}
 }
 
 func init() {
