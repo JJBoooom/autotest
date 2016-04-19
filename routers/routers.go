@@ -100,4 +100,11 @@ var routes = Routes{
 		Method:  "GET",
 		Handler: http.HandlerFunc(handler.Shutdown),
 	},
+
+	Route{
+		Name:    "host",
+		Pattern: "/login",
+		Method:  "POST",
+		Handler: handler.JsonReturnHandler(handler.Login),
+	},
 }

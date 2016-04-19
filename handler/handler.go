@@ -21,6 +21,8 @@ var (
 	//在服务器启动后,询问上级服务器获取registry的地址
 	globalRegistry string
 	log            = logrus.New()
+	ui             = new(UserInfo)
+	logFile        = "./test.log"
 )
 
 type DockerClient struct {
@@ -37,6 +39,7 @@ type JsonReturnHandler func(http.ResponseWriter, *http.Request) error
 
 func (fn JsonReturnHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := fn(w, r); err != nil {
+		log.Error(err)
 		http.Error(w, err.Error(), 500)
 	}
 }
@@ -69,7 +72,7 @@ func getImage(image string, tag string) (docker.APIImages, error) {
 
 	for _, v := range ApiImages {
 		for i := 0; i < len(v.RepoTags); i++ {
-			log.Debugf("getImage:[%s]", v.RepoTags[i])
+			//			log.Debugf("getImage:[%s]", v.RepoTags[i])
 			if v.RepoTags[i] == image+":"+tag {
 				return v, nil
 			}
@@ -100,10 +103,12 @@ func ListImages(w http.ResponseWriter, r *http.Request) error {
 	}
 	byteContent, err := json.Marshal(imagelist)
 	if err != nil {
+		log.Errorf("ListImages:%v\n", err)
 		return err
 	}
 
 	fmt.Fprintf(w, string(byteContent))
+	log.Debugf("ListImages:success\n")
 	return nil
 }
 
@@ -141,6 +146,7 @@ func PublicPullImage(w http.ResponseWriter, r *http.Request) error {
 		log.Errorf("pushFromPublic: pull image[%s:%s] fail:%v\n", image, tag, err)
 		return err
 	}
+	log.Debugf("pushFromPublic success")
 	return nil
 }
 
@@ -201,6 +207,11 @@ func TagImage(w http.ResponseWriter, r *http.Request) error {
 		t := reflect.TypeOf(err)
 		log.Errorf("Tag [%v==>%v:%v ] ErrType[%v:%v] fail:%v\n", old, image2, tag2, t.Name(), t.String(), err)
 	}
+	if err != nil {
+		log.Errorf("TagImage [%v ==> %v:%v] fail for %v", old, image2, tag2, err.Error())
+	} else {
+		log.Infof("TagImage [%v ==> %v:%v] success", old, image2, tag2)
+	}
 	return err
 }
 
@@ -226,6 +237,36 @@ func CheckExists(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+type UserInfo struct {
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Server   string `json:"server"`
+}
+
+func Login(w http.ResponseWriter, r *http.Request) error {
+
+	byteContent, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if r.Body != nil {
+			r.Body.Close()
+		}
+	}()
+
+	err = json.Unmarshal(byteContent, &ui)
+	if err != nil {
+		return err
+	}
+
+	log.Debugf("user: %s\n", ui.User)
+	log.Debugf("Password: %s\n", ui.Password)
+	log.Debugf("server: %s\n", ui.Server)
+
+	return nil
+}
+
 func PullImage(w http.ResponseWriter, r *http.Request) error {
 	vars := mux.Vars(r)
 	image := vars["image"]
@@ -234,29 +275,25 @@ func PullImage(w http.ResponseWriter, r *http.Request) error {
 	if len(image) == 0 || len(tag) == 0 {
 		return errors.New("invalid argument")
 	}
-	/*
-		exists, err := IsImageExist(image, tag)
-		if err != nil {
-			log.Errorf("PullImage check image [%s:%s] exists fail:%v\n", image, tag, err)
-			return errjson.NewInternalServerError(err.Error())
-		}
 
-		if exists {
-			log.Infof("PullImage:  image [%s:%s] exists, skip..", image, tag)
-			return nil
-		}
-	*/
 	opts := docker.PullImageOptions{
 		Repository: image,
 		Tag:        tag,
 		Registry:   globalRegistry,
 	}
-	auths := docker.AuthConfiguration{}
+	auths := docker.AuthConfiguration{
+		Username:      ui.User,
+		Password:      ui.Password,
+		ServerAddress: ui.Server,
+	}
 	err := globalClient.PullImage(opts, auths)
 	if err != nil {
 		t := reflect.TypeOf(err)
 		log.Errorf("PullImage:[%s:%s] ErrType:[%s:%s] fail:%v\n", image, tag, t.Name(), t.String(), err)
+	} else {
+		log.Debugf("PullImage:[%s:%s] success", image, tag)
 	}
+
 	return err
 }
 
@@ -286,7 +323,11 @@ func PushImage(w http.ResponseWriter, r *http.Request) error {
 		Name: image,
 		Tag:  tag,
 	}
-	auth := docker.AuthConfiguration{}
+	auth := docker.AuthConfiguration{
+		Username:      ui.User,
+		Password:      ui.Password,
+		ServerAddress: ui.Server,
+	}
 	err = globalClient.PushImage(opts, auth)
 	if err != nil {
 		t := reflect.TypeOf(err)
@@ -294,6 +335,7 @@ func PushImage(w http.ResponseWriter, r *http.Request) error {
 		return errjson.NewInternalServerError(err.Error())
 	}
 
+	log.Debugf("pushImage [%s:%s] success", image, tag)
 	return nil
 }
 
@@ -324,7 +366,14 @@ func Shutdown(http.ResponseWriter, *http.Request) {
 
 func init() {
 
-	//log.Level = logrus.DebugLevel
+	log.Level = logrus.DebugLevel
+
+	fp, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644) // 让程序关闭后,自动释放
+	if err != nil {
+		log.Errorf("Create logfile %s fail\n", logFile)
+		os.Exit(1)
+	}
+	log.Out = fp
 
 	endpoint := "unix://var/run/docker.sock"
 	client, err := docker.NewClient(endpoint)

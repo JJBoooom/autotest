@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"test/handler"
@@ -23,6 +24,7 @@ var (
 	RegistryIp   string
 	RegistryPort string
 	log          = logrus.New()
+	logFile      = "./log_debug.log"
 )
 
 func register(ip string, port string) (string, error) {
@@ -51,6 +53,25 @@ func register(ip string, port string) (string, error) {
 		return string(byteContent), nil
 	}
 	return "", err
+}
+
+func HealthCheck(ip string, port string) error {
+	client := new(BaseClient)
+	client.Opts = new(ClientOpts)
+	client.Opts.Url = "http://" + ip + ":" + port
+	client.Opts.Timeout = time.Duration(1 * time.Second)
+
+	resp, err := client.DoAction("/", Get)
+
+	defer func() {
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func ConfigRegistry(Registry string) error {
@@ -159,6 +180,16 @@ func ConfigRegistry(Registry string) error {
 
 func main() {
 	go func() {
+		for {
+			err := HealthCheck(ServerIP, ServerPort)
+			if err != nil {
+				log.Debugf("healthy checking ....")
+				os.Exit(1)
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	go func() {
 		/*
 			err := ConfigRegistry(RegistryIp + ":" + RegistryPort)
 			if err != nil {
@@ -167,21 +198,25 @@ func main() {
 		*/
 
 		//注册时,从上层服务器获取到registry(IP:Port)
+		//注意,要开放防火墙端口
 		registryHost, err := register(ServerIP, ServerPort)
 		if err != nil {
-			panic(err)
+			log.Fatalf("can not register to test server for :%v", err)
+
 		}
 		if registryHost != (RegistryIp + ":" + RegistryPort) {
-			panic("registry doesn't match server's registry")
+			log.Fatalf("registry doesn't match server's registry")
 		}
+		go func() {
+
+		}()
 	}()
 	log.Info("router..")
 	router := routers.NewRouter()
 	log.Info("listening on " + ListenPort)
 	err := http.ListenAndServe(":"+ListenPort, router)
 	if err != nil {
-
-		panic(err)
+		log.Fatal(err)
 	}
 }
 
@@ -198,4 +233,12 @@ func init() {
 		panic("invalid argument")
 	}
 	handler.SetRegistry(RegistryIp + ":" + RegistryPort)
+
+	log.Formatter = &logrus.TextFormatter{DisableColors: true}
+	fp, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		panic("create log file fail")
+	}
+	log.Out = fp
+	log.Level = logrus.DebugLevel
 }
