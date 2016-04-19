@@ -13,8 +13,8 @@ import (
 	"test/routers"
 	"time"
 
-	"github.com/Sirupsen/logrus"
-	docker "github.com/fsouza/go-dockerclient"
+	"test/Godeps/_workspace/src/github.com/Sirupsen/logrus"
+	docker "test/Godeps/_workspace/src/github.com/fsouza/go-dockerclient"
 )
 
 var (

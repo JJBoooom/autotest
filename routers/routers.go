@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"test/handler"
 
-	"github.com/gorilla/mux"
+	"test/Godeps/_workspace/src/github.com/gorilla/mux"
 )
 
 type Routes []Route
